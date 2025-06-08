@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EventPulse</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .blink { animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    #calendar-view {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      font-size: 0.9rem;
+    }
+    .calendar-day {
+      padding: 8px;
+      border: 1px solid #ddd;
+      text-align: center;
+      min-height: 60px;
+    }
+    .calendar-day.event { 
+      background-color: #e0f7fa; 
+      cursor: pointer; 
+      position: relative;
+    }
+    .live-badge {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background-color: #ef4444;
+      color: white;
+      font-size: 0.7rem;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    .checkin-screen {
+      position: fixed;
+      inset: 0;
+      background: white;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    @media (min-width: 768px) {
+      #calendar-view { font-size: 1rem; }
+      .calendar-day { min-height: 80px; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100">
+
+  <!-- Login Page -->
+  <section id="login-page" class="p-6 max-w-md mx-auto mt-10 bg-white rounded shadow">
+    <h2 class="text-xl font-bold mb-4">Login to EventPulse</h2>
+    <form id="login-form" class="space-y-4">
+      <input type="email" name="email" placeholder="Email" required class="w-full px-4 py-2 border rounded">
+      <input type="password" name="password" placeholder="Password" required class="w-full px-4 py-2 border rounded">
+      <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded">Login</button>
+    </form>
+    <p class="mt-4 text-sm">Don't have an account? <a href="#" id="show-signup" class="text-blue-600 underline">Sign up</a></p>
+  </section>
+
+  <!-- Signup Page -->
+  <section id="signup-page" class="hidden p-6 max-w-md mx-auto mt-10 bg-white rounded shadow">
+    <h2 class="text-xl font-bold mb-4">Signup to EventPulse</h2>
+    <form id="signup-form" class="space-y-4">
+      <input type="text" name="name" placeholder="Full Name" required class="w-full px-4 py-2 border rounded">
+      <input type="email" name="email" placeholder="Email" required class="w-full px-4 py-2 border rounded">
+      <input type="password" name="password" placeholder="Password" required class="w-full px-4 py-2 border rounded">
+      <select name="role" id="role-select" required class="w-full px-4 py-2 border rounded">
+        <option value="attendee">Attendee</option>
+        <option value="host">Host</option>
+      </select>
+      <input type="text" name="hostCode" id="host-code" placeholder="Enter host code" class="w-full px-4 py-2 border rounded hidden">
+      <button type="submit" class="w-full bg-green-600 text-white py-2 rounded">Signup</button>
+    </form>
+    <p class="mt-4 text-sm">Already have an account? <a href="#" id="show-login" class="text-blue-600 underline">Login</a></p>
+  </section>
+
+  <!-- Dashboard Page -->
+  <section id="dashboard-page" class="hidden p-6 max-w-4xl mx-auto mt-10 bg-white rounded shadow">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold">Welcome to EventPulse</h2>
+      <button id="logout-button" class="bg-red-600 text-white px-4 py-2 rounded">Logout</button>
+    </div>
+
+    <!-- Attendee Count (Host Only) -->
+    <div id="attendee-count" class="host-only hidden mb-6 p-4 bg-blue-100 rounded">
+      <h3 class="font-bold">Event Attendance</h3>
+      <canvas id="attendance-chart" class="mt-2"></canvas>
+    </div>
+
+    <!-- Calendar View -->
+    <div id="calendar-view" class="mb-6"></div>
+
+    <!-- Create Event (Host Only) -->
+    <form id="event-form" class="space-y-2 mb-6 host-only hidden">
+      <input name="title" placeholder="Event Title" required class="w-full border px-4 py-2 rounded">
+      <input name="description" placeholder="Description" required class="w-full border px-4 py-2 rounded">
+      <input name="date" type="datetime-local" required class="w-full border px-4 py-2 rounded">
+      <select name="timezone" required class="w-full border px-4 py-2 rounded">
+        <option value="UTC">UTC</option>
+        <option value="America/New_York">America/New_York</option>
+        <option value="Asia/Kolkata">Asia/Kolkata</option>
+      </select>
+      <input name="location" placeholder="Location or URL" required class="w-full border px-4 py-2 rounded">
+      <input name="deadline" type="datetime-local" required class="w-full border px-4 py-2 rounded">
+      <input name="max" type="number" placeholder="Max Attendees" required class="w-full border px-4 py-2 rounded">
+      <input name="topics" placeholder="Topics (comma-separated)" class="w-full border px-4 py-2 rounded">
+      <button type="submit" class="bg-purple-600 text-white px-4 py-2 rounded">Create Event</button>
+    </form>
+
+    <!-- My Events -->
+    <div id="event-list" class="mb-6"></div>
+
+    <!-- RSVP & Check-In -->
+    <div class="attendee-only space-x-2 hidden">
+      <button id="rsvp-button" class="bg-green-600 text-white px-4 py-2 rounded">RSVP</button>
+      <button id="checkin-button" class="bg-indigo-600 text-white px-4 py-2 rounded hidden">Check In</button>
+    </div>
+
+    <!-- Feedback -->
+    <form id="comment-form" class="mt-4 flex space-x-2 attendee-only hidden">
+      <input type="text" placeholder="Leave a comment..." required class="flex-1 border px-4 py-2 rounded">
+      <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Send</button>
+    </form>
+
+    <!-- Emojis -->
+    <div class="attendee-only mt-4 space-x-2 hidden">
+      <button class="emoji-btn text-2xl">👍</button>
+      <button class="emoji-btn text-2xl">👎</button>
+      <button class="emoji-btn text-2xl">❤</button>
+      <button class="emoji-btn text-2xl">😮</button>
+    </div>
+
+    <!-- Mobile Check-In Screen -->
+    <div id="checkin-screen" class="checkin-screen hidden">
+      <h2 class="text-2xl font-bold mb-4">Check In</h2>
+      <p id="checkin-event-title" class="mb-4"></p>
+      <button id="confirm-checkin" class="bg-indigo-600 text-white px-6 py-3 rounded text-lg">Confirm Check-In</button>
+      <button id="cancel-checkin" class="mt-4 text-blue-600 underline">Cancel</button>
+    </div>
+  </section>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const showSignup = document.getElementById('show-signup');
+      const showLogin = document.getElementById('show-login');
+      const roleSelect = document.getElementById('role-select');
+      const hostCodeInput = document.getElementById('host-code');
+      const loginPage = document.getElementById('login-page');
+      const signupPage = document.getElementById('signup-page');
+
+      showSignup.addEventListener('click', (e) => {
+        e.preventDefault();
+        loginPage.style.display = 'none';
+        signupPage.style.display = 'block';
+      });
+
+      showLogin.addEventListener('click', (e) => {
+        e.preventDefault();
+        signupPage.style.display = 'none';
+        loginPage.style.display = 'block';
+      });
+
+      roleSelect.addEventListener('change', () => {
+        hostCodeInput.classList.toggle('hidden', roleSelect.value !== 'host');
+      });
+    });
+  </script>
+
+  <script src="eventpulse_script.js"></script>
+</body>
+</html>
